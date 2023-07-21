@@ -1,16 +1,28 @@
+import { existsSync, statSync } from "fs";
 import * as path from "path";
-import { statSync } from "fs";
-import type { ServeOptions } from "bun";
+import { join } from "path";
+import { ServerComponent } from "./render/_default.server";
+import { GetPageFileList } from "./utils/GetPageFileList";
+
 
 const PROJECT_ROOT = import.meta.dir;
 const PUBLIC_DIR = path.resolve(PROJECT_ROOT, "public");
 const BUILD_DIR = path.resolve(PROJECT_ROOT, "build");
 
-await Bun.build({
-  entrypoints: ["./src/index.tsx"],
-  outdir: "./build",
-});
+const router = new Bun.FileSystemRouter({
+  style: 'nextjs',
+  dir: './pages',
+})
 
+//console.log((router.match("/main?uiui=90")))
+
+
+await Bun.build({
+  entrypoints: [...GetPageFileList('./render'),...GetPageFileList('./pages')],
+  outdir: "./build",
+  root: '.',
+  splitting: true
+});
 function serveFromDir(config: {
   directory: string;
   path: string;
@@ -32,9 +44,29 @@ function serveFromDir(config: {
 }
 
 const server = Bun.serve({
-  fetch(request) {
+  async fetch(request) {
     let reqPath = new URL(request.url).pathname;
     console.log(request.method, reqPath);
+    // if(){
+    //   import()
+    // }
+    const matched = router.match(request.url)
+    if(matched){
+      let js = ''
+      if(!existsSync(join('./build/pages', matched.src.replace('.tsx', '.js')))
+      && existsSync(join('./build/pages', matched.src.replace('.tsx', '/index.js')))){
+        js = `/pages/${matched.src.replace('.tsx', '/index.js')}`
+      } else {
+        js = `/pages/${matched.src.replace('.tsx', '.js')}`
+      }
+
+      const res = await ServerComponent(matched.query, matched.filePath, js)
+      return new Response(res, {
+        headers: {
+          'Content-Type': 'text/html; charset=utf-8'
+        }
+      })
+    }
     if (reqPath === "/") reqPath = "/index.html";
 
     // check public
